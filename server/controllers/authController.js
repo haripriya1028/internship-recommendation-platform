@@ -1,7 +1,6 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const generateToken = require("../utils/generateToken");
-
 const registerUser = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -27,7 +26,8 @@ const registerUser = async (req, res) => {
     res.status(201).json({
       _id: user._id,
       name: user.name,
-      email: user.email
+      email: user.email,
+      role: user.role
     });
 
   } catch (error) {
@@ -39,6 +39,7 @@ const registerUser = async (req, res) => {
 
 
 const loginUser = async (req, res) => {
+  //throw new Error("LOGIN CONTROLLER IS RUNNING");
   try {
     const { email, password } = req.body;
 
@@ -48,11 +49,14 @@ const loginUser = async (req, res) => {
       user &&
       (await bcrypt.compare(password, user.password))
     ) {
+      
+      
       res.json({
         _id: user._id,
         name: user.name,
         email: user.email,
-        token: generateToken(user._id)
+        role: user.role,
+        token: generateToken(user._id, user.role),
       });
     } else {
       res.status(401).json({
@@ -66,6 +70,7 @@ const loginUser = async (req, res) => {
     });
   }
 };
+
 module.exports = {
   registerUser,
   loginUser

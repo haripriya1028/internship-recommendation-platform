@@ -6,6 +6,9 @@ import Profile from "./pages/Profile";
 import Recommendations from "./pages/Recommendations";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
+import EditProfile from "./pages/EditProfile";
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminRoute from "./components/AdminRoute";
 
 function AppContent() {
   const location = useLocation();
@@ -35,6 +38,23 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/edit-profile"
+          element={
+            <ProtectedRoute>
+              <EditProfile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+              <AdminRoute>
+                  <AdminDashboard />
+              </AdminRoute>
+          }
+       />
       </Routes>
     </>
   );
@@ -47,5 +67,6 @@ function App() {
     </BrowserRouter>
   );
 }
+
 
 export default App;

@@ -54,7 +54,6 @@ function Recommendations() {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Opportunity</p>
                     <h2 className="mt-2 text-xl font-semibold text-slate-900">{internship.title}</h2>
                   </div>
                   <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 ${getScoreStyles(internship.matchScore)}`}>

@@ -43,4 +43,17 @@ const internshipSchema = new mongoose.Schema(
   }
 );
 
+// ===================== INDEXES =====================
+
+// Faster search by company
+internshipSchema.index({ company: 1 });
+
+// Faster search by internship title
+internshipSchema.index({ title: 1 });
+
+// Faster filtering by CGPA
+internshipSchema.index({ minimumCGPA: 1 });
+
+// ===================================================
+
 module.exports = mongoose.model("Internship", internshipSchema);

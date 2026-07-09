@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import API from "../services/api";
 
 function Profile() {
+  const studentName = localStorage.getItem("name");
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
-
+  
+    
   const [formData, setFormData] = useState({
     branch: "",
     year: "",
@@ -63,8 +65,10 @@ function Profile() {
       alert("Failed to create profile");
     }
   };
+  
 
   if (!profile) {
+    
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#f8fbff_0%,_#eef4ff_45%,_#f8fafc_100%)]">
         <div className="mx-auto max-w-5xl px-6 py-16">
@@ -181,15 +185,23 @@ function Profile() {
               </div>
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Student profile</p>
-                <h1 className="mt-1 text-2xl font-semibold text-slate-900">{profile.branch || "Ready for opportunities"}</h1>
+                <h1 className="mt-1 text-2xl font-semibold text-slate-900">{studentName}</h1>
               </div>
             </div>
+            <div className="flex gap-3">
             <button
               onClick={() => navigate("/recommendations")}
               className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition duration-200 hover:-translate-y-0.5 hover:bg-blue-700"
             >
               View recommendations
             </button>
+            <button
+                onClick={() => navigate("/edit-profile")}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                Edit Profile
+            </button>
+            </div>
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">

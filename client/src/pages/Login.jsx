@@ -22,12 +22,20 @@ function Login() {
 
     try {
       const response = await API.post("/auth/login", formData);
-
+      
+      console.log("LOGIN RESPONSE:", response.data);
+      
       localStorage.setItem("token", response.data.token);
       localStorage.setItem("userId", response.data._id);
+      localStorage.setItem("name", response.data.name);
+      localStorage.setItem("role", response.data.role);
 
       alert("Login Successful!");
-      navigate("/profile");
+      if (response.data.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/profile");
+      }
     } catch (error) {
       console.log(error.response?.data);
       alert("Invalid Email or Password");
