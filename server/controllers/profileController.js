@@ -1,5 +1,5 @@
 const Profile = require("../models/Profile");
-
+const Recommendation = require("../models/Recommendation");
 const createProfile = async (req, res) => {
   try {
     const profile = await Profile.create(req.body);
@@ -47,7 +47,12 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    res.json(profile);
+    // Delete cached recommendations
+    await Recommendation.deleteOne({
+      user: req.params.userId,
+    });
+
+res.json(profile);
   } catch (error) {
     res.status(500).json({
       message: error.message,

@@ -1,5 +1,9 @@
+const Recommendation = require("../models/Recommendation");
 const Profile = require("../models/Profile");
 const Internship = require("../models/Internship");
+const {
+  recommendInternships,
+} = require("../services/geminiService");
 
 const getRecommendations = async (req, res) => {
   try {
@@ -14,8 +18,23 @@ const getRecommendations = async (req, res) => {
     }
 
     const internships = await Internship.find();
+    const cachedRecommendations =
+      await Recommendation.findOne({
+        user: req.params.userId,
+    }); 
+    
 
-    const recommendations = internships.map((internship) => {
+if (cachedRecommendations) {
+
+  console.log("Serving recommendations from cache");
+
+  return res.json(
+    cachedRecommendations.recommendations
+  );
+
+}
+
+    /*const recommendations = internships.map((internship) => {
       let score = 0;
 
       // Skill Match (60 points)
@@ -62,7 +81,59 @@ const getRecommendations = async (req, res) => {
       (a, b) => b.matchScore - a.matchScore
     );
 
-    res.json(recommendations);
+    const topInternships = recommendations.slice(0, 5);
+
+    const aiRecommendations =
+        await recommendInternships(profile, topInternships);
+
+    res.json(aiRecommendations);*/
+    // Ask Gemini to rank internships
+const aiRecommendations = await recommendInternships(
+  profile,
+  internships
+);
+
+// Merge Gemini results with MongoDB internship details
+const finalRecommendations = aiRecommendations.map((aiInternship) => {
+
+  const original = internships.find(
+    (internship) =>
+      internship.title === aiInternship.title &&
+      internship.company === aiInternship.company
+  );
+
+  if (!original) return null;
+
+  return {
+    _id: original._id,
+    title: original.title,
+    company: original.company,
+    location: original.location,
+    description: original.description,
+    skillsRequired: original.skillsRequired,
+    minimumCGPA: original.minimumCGPA,
+    eligibleBranches: original.eligibleBranches,
+
+    score: aiInternship.score,
+    reason: aiInternship.reason,
+  };
+
+}).filter(Boolean);
+
+await Recommendation.findOneAndUpdate(
+  {
+    user: req.params.userId,
+  },
+  {
+    recommendations: finalRecommendations,
+  },
+  {
+    upsert: true,
+    new: true,
+  }
+);
+
+res.json(finalRecommendations);
   } catch (error) {
     res.status(500).json({
       message: error.message,
