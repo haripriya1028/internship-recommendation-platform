@@ -1,6 +1,6 @@
 # Internship Recommendation Platform
 
-A full-stack MERN application that recommends internships to students using the Gemini API for AI-ranked, explained recommendations — with JWT authentication, role-based access control, and MongoDB-backed caching.
+A full-stack MERN application that recommends internships to students using the Gemini API for AI-ranked, explained recommendations - with JWT authentication, role-based access control, and MongoDB-backed caching.
 
 **Live demo:** https://internship-recommendation-platform-seven.vercel.app
 
@@ -63,7 +63,7 @@ Recommendations are cached per user in a dedicated `Recommendation` collection (
 - When a student updates their **profile** → that user's cached recommendation document is deleted.
 - When an admin **creates, updates, or deletes an internship** → *every* user's cached recommendations are cleared (`Recommendation.deleteMany({})`), since a new or changed internship could affect anyone's ranking.
 
-### Known limitation (worth knowing going in)
+### Known limitation
 
 An earlier version pre-scored internships with a rule-based formula before sending them to Gemini (60% skill match + 20% branch match + 20% CGPA eligibility) and only sent the top 5 to the model. That pre-scoring step is currently commented out in `recommendationController.js` — right now, **all** internships are sent to Gemini on every cache miss, and the prompt text still references a "calculated matchScore" that isn't actually being computed anymore. This works for a small internship list but doesn't scale well (full list + full prompt on every miss), and the prompt is slightly out of sync with the code. Re-enabling the pre-filter (or trimming to a candidate shortlist before the Gemini call) is the natural next fix.
 
