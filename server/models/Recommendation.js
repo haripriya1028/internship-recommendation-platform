@@ -18,6 +18,8 @@ const recommendationSchema = new mongoose.Schema(
         skillsRequired: [String],
         minimumCGPA: Number,
         eligibleBranches: [String],
+        matchedSkills: [String],
+        ruleBasedScore: Number,
         score: Number,
         reason: String,
       },

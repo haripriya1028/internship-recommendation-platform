@@ -18,44 +18,37 @@ const getRecommendations = async (req, res) => {
     }
 
     const internships = await Internship.find();
-    const cachedRecommendations =
-      await Recommendation.findOne({
-        user: req.params.userId,
-    }); 
-    
+    const cachedRecommendations = await Recommendation.findOne({
+      user: req.params.userId,
+    });
 
-if (cachedRecommendations) {
+    const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const isCacheFresh =
+      cachedRecommendations &&
+      Date.now() - cachedRecommendations.updatedAt.getTime() < CACHE_TTL_MS;
 
-  console.log("Serving recommendations from cache");
+    if (isCacheFresh) {
+      console.log("Serving recommendations from cache");
+      return res.json(cachedRecommendations.recommendations);
+    }
 
-  return res.json(
-    cachedRecommendations.recommendations
-  );
-
-}
-
-    /*const recommendations = internships.map((internship) => {
+    // ---- Stage 1: rule-based scoring (fast, deterministic recall) ----
+    const scored = internships.map((internship) => {
       let score = 0;
 
       // Skill Match (60 points)
-      const matchedSkills = internship.skillsRequired.filter(
-        (skill) =>
-            profile.skills
-                .map((s) => s.toLowerCase())
-                .includes(skill.toLowerCase())
-    );
+      const matchedSkills = internship.skillsRequired.filter((skill) =>
+        profile.skills
+          .map((s) => s.toLowerCase())
+          .includes(skill.toLowerCase())
+      );
 
       if (internship.skillsRequired.length > 0) {
-        score +=
-          (matchedSkills.length /
-            internship.skillsRequired.length) *
-          60;
+        score += (matchedSkills.length / internship.skillsRequired.length) * 60;
       }
 
       // Branch Match (20 points)
-      if (
-        internship.eligibleBranches.includes(profile.branch)
-      ) {
+      if (internship.eligibleBranches.includes(profile.branch)) {
         score += 20;
       }
 
@@ -64,7 +57,6 @@ if (cachedRecommendations) {
         score += 20;
       }
 
-      
       return {
         _id: internship._id,
         title: internship.title,
@@ -72,53 +64,51 @@ if (cachedRecommendations) {
         location: internship.location,
         description: internship.description,
         skillsRequired: internship.skillsRequired,
+        minimumCGPA: internship.minimumCGPA,
+        eligibleBranches: internship.eligibleBranches,
         matchedSkills,
         matchScore: Math.round(score),
-    };
+      };
     });
 
-    recommendations.sort(
-      (a, b) => b.matchScore - a.matchScore
+    scored.sort((a, b) => b.matchScore - a.matchScore);
+
+    // Shortlist the top candidates so we're not shipping the entire
+    // internship collection into every Gemini call.
+    const SHORTLIST_SIZE = 15;
+    const shortlist = scored.slice(0, SHORTLIST_SIZE);
+
+    // ---- Stage 2: LLM re-ranking + reasoning on the shortlist only ----
+    const aiRecommendations = await recommendInternships(profile, shortlist);
+
+    // Merge Gemini's output back onto the shortlist by stable _id
+    // (never by title/company text, which breaks if the model paraphrases).
+    const shortlistById = new Map(
+      shortlist.map((internship) => [internship._id.toString(), internship])
     );
 
-    const topInternships = recommendations.slice(0, 5);
+    const finalRecommendations = aiRecommendations
+      .map((aiInternship) => {
+        const original = shortlistById.get(String(aiInternship.id));
+        if (!original) return null;
 
-    const aiRecommendations =
-        await recommendInternships(profile, topInternships);
-
-    res.json(aiRecommendations);*/
-    // Ask Gemini to rank internships
-const aiRecommendations = await recommendInternships(
-  profile,
-  internships
-);
-
-// Merge Gemini results with MongoDB internship details
-const finalRecommendations = aiRecommendations.map((aiInternship) => {
-
-  const original = internships.find(
-    (internship) =>
-      internship.title === aiInternship.title &&
-      internship.company === aiInternship.company
-  );
-
-  if (!original) return null;
-
-  return {
-    _id: original._id,
-    title: original.title,
-    company: original.company,
-    location: original.location,
-    description: original.description,
-    skillsRequired: original.skillsRequired,
-    minimumCGPA: original.minimumCGPA,
-    eligibleBranches: original.eligibleBranches,
-
-    score: aiInternship.score,
-    reason: aiInternship.reason,
-  };
-
-}).filter(Boolean);
+        return {
+          _id: original._id,
+          title: original.title,
+          company: original.company,
+          location: original.location,
+          description: original.description,
+          skillsRequired: original.skillsRequired,
+          minimumCGPA: original.minimumCGPA,
+          eligibleBranches: original.eligibleBranches,
+          matchedSkills: original.matchedSkills,
+          ruleBasedScore: original.matchScore,
+          score: aiInternship.score,
+          reason: aiInternship.reason,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
 
 await Recommendation.findOneAndUpdate(
   {
@@ -135,6 +125,7 @@ await Recommendation.findOneAndUpdate(
 
 res.json(finalRecommendations);
   } catch (error) {
+    console.error("getRecommendations failed:", error);
     res.status(500).json({
       message: error.message,
     });

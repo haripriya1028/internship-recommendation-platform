@@ -1,0 +1,384 @@
+diff --git a/server/controllers/profileController.js b/server/controllers/profileController.js
+index 8fac4d2..9c3b5ba 100644
+--- a/server/controllers/profileController.js
+
++++ b/server/controllers/profileController.js
+@@ -1,7 +1,20 @@
+ const Profile = require("../models/Profile");
+ const Recommendation = require("../models/Recommendation");
++
++// A user may only touch their own profile unless they're an admin.
++const isSelfOrAdmin = (req, targetUserId) =>
++  req.user.role === "admin" || req.user.id === targetUserId;
++
+ const createProfile = async (req, res) => {
+   try {
++    // Force the profile to be created for the authenticated user,
++    // never for whatever "user" the client puts in the body.
++    if (!isSelfOrAdmin(req, req.body.user)) {
++      return res.status(403).json({
++        message: "Not authorized to create this profile",
++      });
++    }
++
+     const profile = await Profile.create(req.body);
+ 
+     res.status(201).json(profile);
+@@ -14,6 +27,12 @@ const createProfile = async (req, res) => {
+ 
+ const getProfile = async (req, res) => {
+   try {
++    if (!isSelfOrAdmin(req, req.params.userId)) {
++      return res.status(403).json({
++        message: "Not authorized to view this profile",
++      });
++    }
++
+     const profile = await Profile.findOne({
+       user: req.params.userId,
+     });
+@@ -33,6 +52,12 @@ const getProfile = async (req, res) => {
+ };
+ const updateProfile = async (req, res) => {
+   try {
++    if (!isSelfOrAdmin(req, req.params.userId)) {
++      return res.status(403).json({
++        message: "Not authorized to update this profile",
++      });
++    }
++
+     const profile = await Profile.findOneAndUpdate(
+       { user: req.params.userId },
+       req.body,
+diff --git a/server/controllers/recommendationController.js b/server/controllers/recommendationController.js
+index cab1de8..62125cd 100644
+--- a/server/controllers/recommendationController.js
++++ b/server/controllers/recommendationController.js
+@@ -18,44 +18,37 @@ const getRecommendations = async (req, res) => {
+     }
+ 
+     const internships = await Internship.find();
+-    const cachedRecommendations =
+-      await Recommendation.findOne({
+-        user: req.params.userId,
+-    }); 
+-    
+-
+-if (cachedRecommendations) {
+-
+-  console.log("Serving recommendations from cache");
++    const cachedRecommendations = await Recommendation.findOne({
++      user: req.params.userId,
++    });
+ 
+-  return res.json(
+-    cachedRecommendations.recommendations
+-  );
++    const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
++    const isCacheFresh =
++      cachedRecommendations &&
++      Date.now() - cachedRecommendations.updatedAt.getTime() < CACHE_TTL_MS;
+ 
+-}
++    if (isCacheFresh) {
++      console.log("Serving recommendations from cache");
++      return res.json(cachedRecommendations.recommendations);
++    }
+ 
+-    /*const recommendations = internships.map((internship) => {
++    // ---- Stage 1: rule-based scoring (fast, deterministic recall) ----
++    const scored = internships.map((internship) => {
+       let score = 0;
+ 
+       // Skill Match (60 points)
+-      const matchedSkills = internship.skillsRequired.filter(
+-        (skill) =>
+-            profile.skills
+-                .map((s) => s.toLowerCase())
+-                .includes(skill.toLowerCase())
+-    );
++      const matchedSkills = internship.skillsRequired.filter((skill) =>
++        profile.skills
++          .map((s) => s.toLowerCase())
++          .includes(skill.toLowerCase())
++      );
+ 
+       if (internship.skillsRequired.length > 0) {
+-        score +=
+-          (matchedSkills.length /
+-            internship.skillsRequired.length) *
+-          60;
++        score += (matchedSkills.length / internship.skillsRequired.length) * 60;
+       }
+ 
+       // Branch Match (20 points)
+-      if (
+-        internship.eligibleBranches.includes(profile.branch)
+-      ) {
++      if (internship.eligibleBranches.includes(profile.branch)) {
+         score += 20;
+       }
+ 
+@@ -64,7 +57,6 @@ if (cachedRecommendations) {
+         score += 20;
+       }
+ 
+-      
+       return {
+         _id: internship._id,
+         title: internship.title,
+@@ -72,53 +64,51 @@ if (cachedRecommendations) {
+         location: internship.location,
+         description: internship.description,
+         skillsRequired: internship.skillsRequired,
++        minimumCGPA: internship.minimumCGPA,
++        eligibleBranches: internship.eligibleBranches,
+         matchedSkills,
+         matchScore: Math.round(score),
+-    };
++      };
+     });
+ 
+-    recommendations.sort(
+-      (a, b) => b.matchScore - a.matchScore
+-    );
+-
+-    const topInternships = recommendations.slice(0, 5);
+-
+-    const aiRecommendations =
+-        await recommendInternships(profile, topInternships);
+-
+-    res.json(aiRecommendations);*/
+-    // Ask Gemini to rank internships
+-const aiRecommendations = await recommendInternships(
+-  profile,
+-  internships
+-);
++    scored.sort((a, b) => b.matchScore - a.matchScore);
+ 
+-// Merge Gemini results with MongoDB internship details
+-const finalRecommendations = aiRecommendations.map((aiInternship) => {
++    // Shortlist the top candidates so we're not shipping the entire
++    // internship collection into every Gemini call.
++    const SHORTLIST_SIZE = 15;
++    const shortlist = scored.slice(0, SHORTLIST_SIZE);
+ 
+-  const original = internships.find(
+-    (internship) =>
+-      internship.title === aiInternship.title &&
+-      internship.company === aiInternship.company
+-  );
++    // ---- Stage 2: LLM re-ranking + reasoning on the shortlist only ----
++    const aiRecommendations = await recommendInternships(profile, shortlist);
+ 
+-  if (!original) return null;
+-
+-  return {
+-    _id: original._id,
+-    title: original.title,
+-    company: original.company,
+-    location: original.location,
+-    description: original.description,
+-    skillsRequired: original.skillsRequired,
+-    minimumCGPA: original.minimumCGPA,
+-    eligibleBranches: original.eligibleBranches,
+-
+-    score: aiInternship.score,
+-    reason: aiInternship.reason,
+-  };
++    // Merge Gemini's output back onto the shortlist by stable _id
++    // (never by title/company text, which breaks if the model paraphrases).
++    const shortlistById = new Map(
++      shortlist.map((internship) => [internship._id.toString(), internship])
++    );
+ 
+-}).filter(Boolean);
++    const finalRecommendations = aiRecommendations
++      .map((aiInternship) => {
++        const original = shortlistById.get(String(aiInternship.id));
++        if (!original) return null;
++
++        return {
++          _id: original._id,
++          title: original.title,
++          company: original.company,
++          location: original.location,
++          description: original.description,
++          skillsRequired: original.skillsRequired,
++          minimumCGPA: original.minimumCGPA,
++          eligibleBranches: original.eligibleBranches,
++          matchedSkills: original.matchedSkills,
++          ruleBasedScore: original.matchScore,
++          score: aiInternship.score,
++          reason: aiInternship.reason,
++        };
++      })
++      .filter(Boolean)
++      .sort((a, b) => b.score - a.score);
+ 
+ await Recommendation.findOneAndUpdate(
+   {
+diff --git a/server/middleware/adminMiddleware.js b/server/middleware/adminMiddleware.js
+index 2f230cd..c0580be 100644
+--- a/server/middleware/adminMiddleware.js
++++ b/server/middleware/adminMiddleware.js
+@@ -1,19 +1,4 @@
+-/*const isAdmin = (req, res, next) => {
+-  if (req.user.role !== "admin") {
+-    return res.status(403).json({
+-      message: "Admin only",
+-    });
+-  }
+-
+-  next();
+-};
+-
+-module.exports = { isAdmin };*/
+-
+ const isAdmin = (req, res, next) => {
+-
+-  console.log("REQ.USER:", req.user);
+-
+   if (req.user.role !== "admin") {
+     return res.status(403).json({
+       message: "Admin only",
+diff --git a/server/models/Recommendation.js b/server/models/Recommendation.js
+index db9aa64..bb2f3a2 100644
+--- a/server/models/Recommendation.js
++++ b/server/models/Recommendation.js
+@@ -18,6 +18,8 @@ const recommendationSchema = new mongoose.Schema(
+         skillsRequired: [String],
+         minimumCGPA: Number,
+         eligibleBranches: [String],
++        matchedSkills: [String],
++        ruleBasedScore: Number,
+         score: Number,
+         reason: String,
+       },
+diff --git a/server/routes/internshipRoutes.js b/server/routes/internshipRoutes.js
+index ef194c0..ce3d2de 100644
+--- a/server/routes/internshipRoutes.js
++++ b/server/routes/internshipRoutes.js
+@@ -12,10 +12,6 @@ const {
+ const { isAdmin } = require("../middleware/adminMiddleware");
+ const { authenticateUser } = require("../middleware/authMiddleware");
+ 
+-console.log("authenticateUser:", authenticateUser);
+-console.log("isAdmin:", isAdmin);
+-console.log("deleteInternship:", deleteInternship);
+-
+ router.post("/", authenticateUser, isAdmin, createInternship);
+ 
+ router.get("/", getInternships);
+diff --git a/server/routes/profileRoutes.js b/server/routes/profileRoutes.js
+index cf934b2..fafa46d 100644
+--- a/server/routes/profileRoutes.js
++++ b/server/routes/profileRoutes.js
+@@ -2,18 +2,18 @@ const express = require("express");
+ 
+ const router = express.Router();
+ 
+-
+-
+-
+ const {
+   createProfile,
+   getProfile,
+   updateProfile,
+ } = require("../controllers/profileController");
+ 
+-router.post("/", createProfile);
++const { authenticateUser } = require("../middleware/authMiddleware");
++
++router.post("/", authenticateUser, createProfile);
++
++router.get("/:userId", authenticateUser, getProfile);
+ 
+-router.get("/:userId", getProfile);
++router.put("/:userId", authenticateUser, updateProfile);
+ 
+-router.put("/:userId", updateProfile);
+ module.exports = router;
+\ No newline at end of file
+diff --git a/server/routes/recommendationRoutes.js b/server/routes/recommendationRoutes.js
+index 14a4870..d14bc26 100644
+--- a/server/routes/recommendationRoutes.js
++++ b/server/routes/recommendationRoutes.js
+@@ -6,6 +6,8 @@ const {
+   getRecommendations,
+ } = require("../controllers/recommendationController");
+ 
+-router.get("/:userId", getRecommendations);
++const { authenticateUser } = require("../middleware/authMiddleware");
++
++router.get("/:userId", authenticateUser, getRecommendations);
+ 
+ module.exports = router;
+\ No newline at end of file
+diff --git a/server/services/geminiService.js b/server/services/geminiService.js
+index fc6909a..90e2295 100644
+--- a/server/services/geminiService.js
++++ b/server/services/geminiService.js
+@@ -7,6 +7,18 @@ const ai = new GoogleGenAI({
+ });
+ 
+ const recommendInternships = async (profile, internships) => {
++  // Only send the fields Gemini actually needs, keyed by stable _id,
++  // so we can merge the response back without fragile string matching.
++  const candidates = internships.map((i) => ({
++    id: i._id.toString(),
++    title: i.title,
++    company: i.company,
++    description: i.description,
++    skillsRequired: i.skillsRequired,
++    matchedSkills: i.matchedSkills,
++    matchScore: i.matchScore,
++  }));
++
+   const prompt = `
+ You are an AI internship recommendation assistant.
+ 
+@@ -21,15 +33,12 @@ ${profile.skills.join(", ")}
+ Interests:
+ ${profile.interests.join(", ")}
+ 
+-Available Internships:
+-
+-${JSON.stringify(internships, null, 2)}
+-
+-You are an AI career advisor.
++Candidate Internships (already pre-filtered and scored by a rule-based
++matcher on skills, branch and CGPA):
+ 
+-The internships already include a calculated matchScore based on skills, branch and CGPA.
++${JSON.stringify(candidates, null, 2)}
+ 
+-Use this score as a starting point, but also consider:
++Use the existing matchScore as a starting point, but also consider:
+ 
+ - internship description
+ - student's interests
+@@ -37,18 +46,13 @@ Use this score as a starting point, but also consider:
+ - company
+ - overall suitability
+ 
+-Re-rank them if needed.
+-
+-
+-
+-Return ONLY valid JSON.
++Re-rank the candidates if needed and write a short reason for each.
+ 
+-Each internship should contain:
++Return ONLY valid JSON: an array where each item contains exactly:
+ 
+-title
+-company
+-score
+-reason
++id     (copy the candidate's "id" field exactly, unchanged)
++score  (0-100)
++reason (one or two sentences)
+ `;
+ 
+   const response = await ai.models.generateContent({

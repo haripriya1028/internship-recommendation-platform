@@ -12,10 +12,6 @@ const {
 const { isAdmin } = require("../middleware/adminMiddleware");
 const { authenticateUser } = require("../middleware/authMiddleware");
 
-console.log("authenticateUser:", authenticateUser);
-console.log("isAdmin:", isAdmin);
-console.log("deleteInternship:", deleteInternship);
-
 router.post("/", authenticateUser, isAdmin, createInternship);
 
 router.get("/", getInternships);

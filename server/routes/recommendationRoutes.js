@@ -6,6 +6,8 @@ const {
   getRecommendations,
 } = require("../controllers/recommendationController");
 
-router.get("/:userId", getRecommendations);
+const { authenticateUser } = require("../middleware/authMiddleware");
+
+router.get("/:userId", authenticateUser, getRecommendations);
 
 module.exports = router;

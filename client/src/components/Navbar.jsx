@@ -13,6 +13,7 @@ function Navbar() {
   const navItems = [
     { to: "/profile", label: "Profile" },
     { to: "/recommendations", label: "Recommendations" },
+    { to: "/browse-internships", label: "Browse Internships" },
   ];
 
   return (
@@ -28,14 +29,14 @@ function Navbar() {
           </div>
         </Link>
 
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-2">
           {navItems.map((item) => {
             const isActive = location.pathname === item.to;
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                className={`rounded-xl px-3 py-2 text-sm font-medium transition duration-200 ${
+                className={`rounded-xl px-2 py-2 text-sm font-medium transition duration-200 sm:px-3 ${
                   isActive
                     ? "bg-blue-50 text-blue-700"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -48,7 +49,7 @@ function Navbar() {
 
           <button
             onClick={logout}
-            className="ml-1 inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+            className="ml-1 inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 sm:px-4"
           >
             Logout
           </button>
