@@ -13,6 +13,7 @@ function Navbar() {
   const navItems = [
     { to: "/profile", label: "Profile" },
     { to: "/recommendations", label: "Recommendations" },
+    { to: "/applications", label: "Applications" },
   ];
 
   return (

@@ -5,6 +5,7 @@ function AdminDashboard() {
     title: "",
     company: "",
     location: "",
+    link: "",
     skillsRequired: "",
     minimumCGPA: "",
     eligibleBranches: "",
@@ -35,6 +36,8 @@ function AdminDashboard() {
             company: formData.company,
 
             location: formData.location,
+
+            link: formData.link,
 
             skillsRequired: formData.skillsRequired
                 .split(",")
@@ -105,6 +108,7 @@ if (editingId) {
             title: "",
             company: "",
             location: "",
+            link: "",
             skillsRequired: "",
             minimumCGPA: "",
             eligibleBranches: "",
@@ -223,6 +227,7 @@ const handleEdit = (internship) => {
     title: internship.title,
     company: internship.company,
     location: internship.location,
+    link: internship.link || "",
     skillsRequired: internship.skillsRequired.join(", "),
     minimumCGPA: internship.minimumCGPA,
     eligibleBranches: internship.eligibleBranches.join(", "),
@@ -253,6 +258,7 @@ const handleCancelEdit = () => {
     title: "",
     company: "",
     location: "",
+    link: "",
     skillsRequired: "",
     minimumCGPA: "",
     eligibleBranches: "",
@@ -293,6 +299,14 @@ const handleCancelEdit = () => {
             placeholder="Location"
             className="w-full border p-3 rounded"
             value={formData.location}
+            onChange={handleChange}
+          />
+
+          <input
+            name="link"
+            placeholder="Application Link"
+            className="w-full border p-3 rounded"
+            value={formData.link}
             onChange={handleChange}
           />
 
@@ -384,6 +398,22 @@ const handleCancelEdit = () => {
 
             <p>
                 <strong>Minimum CGPA:</strong> {internship.minimumCGPA}
+            </p>
+
+            <p>
+                <strong>Application Link:</strong>{" "}
+                {internship.link ? (
+                  <a
+                    href={internship.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    Open link
+                  </a>
+                ) : (
+                  "Not provided"
+                )}
             </p>
 
             <p>

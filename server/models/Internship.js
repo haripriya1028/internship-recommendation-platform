@@ -37,6 +37,11 @@ const internshipSchema = new mongoose.Schema(
     description: {
       type: String,
     },
+
+    link: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

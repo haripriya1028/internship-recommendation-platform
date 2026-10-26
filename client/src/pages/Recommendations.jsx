@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import API from "../services/api";
 
+const STATUS_OPTIONS = [
+  "viewed",
+  "applied",
+  "in progress",
+  "accepted",
+  "rejected",
+];
+
+const COMPLETED_STATUSES = [
+  "applied",
+  "in progress",
+  "accepted",
+  "rejected",
+];
+
 function Recommendations() {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +41,51 @@ function Recommendations() {
     setLoading(false);
   }
 };
+
+  const updateStatus = async (
+    internshipId,
+    status
+  ) => {
+    const userId = localStorage.getItem("userId");
+
+    try {
+      await API.patch(
+        `/recommendations/${userId}/${internshipId}/status`,
+        { status }
+      );
+
+      setRecommendations((prevRecommendations) =>
+        prevRecommendations.map((item) =>
+          String(item._id) === String(internshipId)
+            ? { ...item, status }
+            : item
+        )
+      );
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const handleApplyClick = (internship) => {
+    if (!internship.link) {
+      return;
+    }
+
+    window.open(
+      internship.link,
+      "_blank",
+      "noopener,noreferrer"
+    );
+
+    const currentStatus =
+      internship.status || "not viewed";
+
+    if (
+      !COMPLETED_STATUSES.includes(currentStatus)
+    ) {
+      updateStatus(internship._id, "viewed");
+    }
+  };
 
   const getScoreStyles = (score) => {
     if (score >= 80) {
@@ -159,6 +219,48 @@ function Recommendations() {
                   <p className="mt-2 text-sm leading-6 text-slate-700">
                     {internship.reason}
                   </p>
+
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleApplyClick(internship)
+                    }
+                    disabled={!internship.link}
+                    className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    Apply
+                  </button>
+
+                  <select
+                    value={
+                      internship.status || "not viewed"
+                    }
+                    onChange={(e) =>
+                      updateStatus(
+                        internship._id,
+                        e.target.value
+                      )
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700"
+                  >
+                    <option value="not viewed" disabled>
+                      not viewed
+                    </option>
+
+                    {STATUS_OPTIONS.map((statusOption) => (
+                      <option
+                        key={statusOption}
+                        value={statusOption}
+                      >
+                        {statusOption}
+                      </option>
+                    ))}
+
+                  </select>
 
                 </div>
 

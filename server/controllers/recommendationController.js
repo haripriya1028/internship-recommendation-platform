@@ -5,6 +5,95 @@ const {
   recommendInternships,
 } = require("../services/geminiService");
 
+const VALID_STATUSES = [
+  "not viewed",
+  "viewed",
+  "applied",
+  "in progress",
+  "accepted",
+  "rejected",
+];
+
+const TERMINAL_STATUSES = [
+  "applied",
+  "in progress",
+  "accepted",
+  "rejected",
+];
+
+const MIN_RECOMMENDATION_SCORE = 50;
+
+const buildFallbackRecommendations = (
+  profile,
+  internships
+) => {
+  const profileSkills = (profile.skills || []).map((s) =>
+    s.toLowerCase()
+  );
+  const interests = (profile.interests || []).map((i) =>
+    i.toLowerCase()
+  );
+
+  return internships
+    .map((internship) => {
+      const requiredSkills =
+        internship.skillsRequired || [];
+      const matchedSkills = requiredSkills.filter(
+        (skill) =>
+          profileSkills.includes(skill.toLowerCase())
+      );
+
+      let score = 0;
+
+      if (requiredSkills.length > 0) {
+        score +=
+          (matchedSkills.length /
+            requiredSkills.length) *
+          50;
+      }
+
+      if (
+        internship.eligibleBranches?.includes(
+          profile.branch
+        )
+      ) {
+        score += 25;
+      }
+
+      if (profile.cgpa >= internship.minimumCGPA) {
+        score += 25;
+      }
+
+      const textToCheck = `${
+        internship.title || ""
+      } ${internship.description || ""}`.toLowerCase();
+      const matchedInterests = interests.filter(
+        (interest) => textToCheck.includes(interest)
+      );
+
+      if (matchedInterests.length > 0) {
+        score += 10;
+      }
+
+      const finalScore = Math.min(
+        100,
+        Math.round(score)
+      );
+
+      return {
+        title: internship.title,
+        company: internship.company,
+        score: finalScore,
+        reason: `Matched ${matchedSkills.length}/${requiredSkills.length} required skills, branch and CGPA eligibility considered${
+          matchedInterests.length > 0
+            ? ", plus interest alignment"
+            : ""
+        }.`,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+};
+
 const getRecommendations = async (req, res) => {
   try {
     const profile = await Profile.findOne({
@@ -26,11 +115,51 @@ const getRecommendations = async (req, res) => {
 
 if (cachedRecommendations) {
 
+  const normalizedRecommendations =
+    cachedRecommendations.recommendations.map(
+      (recommendation) => ({
+        _id: recommendation._id,
+        ...recommendation.toObject(),
+        link:
+          recommendation.link ||
+          internships.find(
+            (internship) =>
+              String(internship._id) ===
+              String(recommendation._id)
+          )?.link ||
+          "",
+        status:
+          recommendation.status || "not viewed",
+      })
+    );
+
+  const filteredRecommendations =
+    normalizedRecommendations.filter(
+      (recommendation) =>
+        Number(recommendation.score || 0) >=
+        MIN_RECOMMENDATION_SCORE
+    );
+
+  const hasMissingData =
+    cachedRecommendations.recommendations.some(
+      (recommendation) =>
+        !recommendation.status ||
+        recommendation.link === undefined
+    );
+
+  const requiresScoreFiltering =
+    normalizedRecommendations.length !==
+    filteredRecommendations.length;
+
+  if (hasMissingData || requiresScoreFiltering) {
+    cachedRecommendations.recommendations =
+      filteredRecommendations;
+    await cachedRecommendations.save();
+  }
+
   console.log("Serving recommendations from cache");
 
-  return res.json(
-    cachedRecommendations.recommendations
-  );
+  return res.json(filteredRecommendations);
 
 }
 
@@ -87,14 +216,42 @@ if (cachedRecommendations) {
         await recommendInternships(profile, topInternships);
 
     res.json(aiRecommendations);*/
-    // Ask Gemini to rank internships
-const aiRecommendations = await recommendInternships(
-  profile,
-  internships
-);
+    // Ask Gemini to rank internships. If unavailable, use deterministic fallback ranking.
+let aiRecommendations;
+
+try {
+  aiRecommendations = await recommendInternships(
+    profile,
+    internships
+  );
+} catch (error) {
+  console.error(
+    "Gemini recommendation failed, using fallback:",
+    error.message
+  );
+  aiRecommendations =
+    buildFallbackRecommendations(
+      profile,
+      internships
+    );
+}
+
+const rankedRecommendations = Array.isArray(
+  aiRecommendations
+)
+  ? aiRecommendations
+  : aiRecommendations?.recommendations || [];
+
+const safeRecommendations =
+  rankedRecommendations.length > 0
+    ? rankedRecommendations
+    : buildFallbackRecommendations(
+        profile,
+        internships
+      );
 
 // Merge Gemini results with MongoDB internship details
-const finalRecommendations = aiRecommendations.map((aiInternship) => {
+const finalRecommendations = safeRecommendations.map((aiInternship) => {
 
   const original = internships.find(
     (internship) =>
@@ -113,19 +270,28 @@ const finalRecommendations = aiRecommendations.map((aiInternship) => {
     skillsRequired: original.skillsRequired,
     minimumCGPA: original.minimumCGPA,
     eligibleBranches: original.eligibleBranches,
+    link: original.link,
 
     score: aiInternship.score,
     reason: aiInternship.reason,
+    status: "not viewed",
   };
 
 }).filter(Boolean);
+
+const filteredFinalRecommendations =
+  finalRecommendations.filter(
+    (recommendation) =>
+      Number(recommendation.score || 0) >=
+      MIN_RECOMMENDATION_SCORE
+  );
 
 await Recommendation.findOneAndUpdate(
   {
     user: req.params.userId,
   },
   {
-    recommendations: finalRecommendations,
+    recommendations: filteredFinalRecommendations,
   },
   {
     upsert: true,
@@ -133,7 +299,81 @@ await Recommendation.findOneAndUpdate(
   }
 );
 
-res.json(finalRecommendations);
+res.json(filteredFinalRecommendations);
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+const updateRecommendationStatus = async (
+  req,
+  res
+) => {
+  try {
+    const { userId, internshipId } = req.params;
+    let { status } = req.body;
+    const { title, company } = req.body;
+
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({
+        message: "Invalid status value",
+      });
+    }
+
+    const recommendationDoc =
+      await Recommendation.findOne({
+        user: userId,
+      });
+
+    if (!recommendationDoc) {
+      return res.status(404).json({
+        message: "Recommendations not found",
+      });
+    }
+
+    let recommendation =
+      recommendationDoc.recommendations.find(
+        (item) =>
+          String(item._id) === String(internshipId)
+      );
+
+    if (!recommendation && title && company) {
+      recommendation =
+        recommendationDoc.recommendations.find(
+          (item) =>
+            item.title === title &&
+            item.company === company
+        );
+    }
+
+    if (!recommendation) {
+      return res.status(404).json({
+        message: "Internship recommendation not found",
+      });
+    }
+
+    const currentStatus =
+      recommendation.status || "not viewed";
+
+    // Avoid downgrading progress when Apply is clicked again.
+    if (
+      status === "viewed" &&
+      TERMINAL_STATUSES.includes(currentStatus)
+    ) {
+      status = currentStatus;
+    }
+
+    recommendation.status = status;
+
+    await recommendationDoc.save();
+
+    res.json({
+      message: "Status updated successfully",
+      status: recommendation.status,
+      internshipId,
+    });
   } catch (error) {
     res.status(500).json({
       message: error.message,
@@ -143,4 +383,5 @@ res.json(finalRecommendations);
 
 module.exports = {
   getRecommendations,
+  updateRecommendationStatus,
 };

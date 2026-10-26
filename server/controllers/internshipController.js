@@ -69,6 +69,7 @@ const updateInternship = async (req, res) => {
     internship.minimumCGPA = req.body.minimumCGPA;
     internship.eligibleBranches = req.body.eligibleBranches;
     internship.description = req.body.description;
+    internship.link = req.body.link;
 
     const updatedInternship = await internship.save();
 
