@@ -8,6 +8,13 @@ const recommendationSchema = new mongoose.Schema(
       unique: true,
     },
 
+    // Set when internships or the profile change, so the next fetch
+    // regenerates recommendations while keeping application statuses.
+    stale: {
+      type: Boolean,
+      default: false,
+    },
+
     recommendations: [
       {
         _id: mongoose.Schema.Types.ObjectId,
@@ -19,8 +26,15 @@ const recommendationSchema = new mongoose.Schema(
         minimumCGPA: Number,
         eligibleBranches: [String],
         link: String,
+        matchedSkills: [String],
+        ruleBasedScore: Number,
         score: Number,
         reason: String,
+        // false for internships tracked from Browse that weren't recommended
+        recommended: {
+          type: Boolean,
+          default: true,
+        },
         status: {
           type: String,
           enum: [

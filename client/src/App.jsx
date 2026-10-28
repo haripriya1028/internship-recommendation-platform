@@ -5,6 +5,7 @@ import Register from "./pages/Register";
 import Profile from "./pages/Profile";
 import Recommendations from "./pages/Recommendations";
 import Applications from "./pages/Applications";
+import BrowseInternships from "./pages/BrowseInternships";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import EditProfile from "./pages/EditProfile";
@@ -45,6 +46,15 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Applications />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/browse-internships"
+          element={
+            <ProtectedRoute>
+              <BrowseInternships />
             </ProtectedRoute>
           }
         />

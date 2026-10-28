@@ -7,9 +7,13 @@ const {
   updateRecommendationStatus,
 } = require("../controllers/recommendationController");
 
-router.get("/:userId", getRecommendations);
+const { authenticateUser } = require("../middleware/authMiddleware");
+
+router.get("/:userId", authenticateUser, getRecommendations);
+
 router.patch(
   "/:userId/:internshipId/status",
+  authenticateUser,
   updateRecommendationStatus
 );
 
